@@ -1,0 +1,75 @@
+%% Data Flow: Search Request
+%% Analysis Baseline: adcda004057df08389106da56f440db185f0c382
+
+sequenceDiagram
+    participant Client
+    participant REST as REST API<br/>(Actix)
+    participant ToC as Table of<br/>Contents
+    participant Collection
+    participant Shard1 as Shard 1
+    participant Shard2 as Shard 2
+    participant Segment
+    participant HNSW as HNSW Index
+    participant Filter as Field Index<br/>(Filtering)
+
+    Client->>REST: POST /search<br/>vector + filter + limit
+    activate REST
+
+    REST->>REST: Validate request<br/>(dimension, schema)
+    REST->>ToC: Route to collection
+    activate ToC
+
+    ToC->>Collection: search(query)
+    activate Collection
+
+    par Search all shards in parallel
+        Collection->>Shard1: search(query, filter)
+        activate Shard1
+
+        Collection->>Shard2: search(query, filter)
+        activate Shard2
+    end
+
+    Shard1->>Segment: search(vector, filter, k)
+    activate Segment
+
+    Segment->>Segment: Query Optimizer<br/>Choose strategy
+
+    alt Filter is selective
+        Segment->>Filter: Pre-filter points
+        activate Filter
+        Filter-->>Segment: Filtered point IDs
+        deactivate Filter
+        Segment->>HNSW: Search subset
+    else Filter is broad
+        Segment->>HNSW: Search with filter
+        activate HNSW
+        HNSW->>HNSW: Graph traversal<br/>(filtered)
+        HNSW-->>Segment: Candidate points
+        deactivate HNSW
+        Segment->>Filter: Post-filter
+        activate Filter
+        Filter-->>Segment: Final results
+        deactivate Filter
+    end
+
+    Segment-->>Shard1: Top-K results
+    deactivate Segment
+    Shard1-->>Collection: Local top-K
+    deactivate Shard1
+
+    Shard2->>Segment: (similar process)
+    Shard2-->>Collection: Local top-K
+    deactivate Shard2
+
+    Collection->>Collection: Merge & re-rank<br/>Global top-K
+    Collection-->>ToC: Final results
+    deactivate Collection
+
+    ToC-->>REST: Serialize response
+    deactivate ToC
+
+    REST-->>Client: JSON response<br/>scored points
+    deactivate REST
+
+    Note over Client,Filter: Total latency: 5-50ms<br/>(depends on dataset size, filters, hardware)

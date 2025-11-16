@@ -1,0 +1,84 @@
+%% Qdrant Architecture Overview
+%% Analysis Baseline: adcda004057df08389106da56f440db185f0c382
+
+graph TB
+    subgraph "Client Applications"
+        Client[Client Apps<br/>Python, JS, Go, Rust]
+    end
+
+    subgraph "API Layer :6333 :6334"
+        REST[REST API<br/>Actix-web<br/>Port 6333]
+        GRPC[gRPC API<br/>Tonic<br/>Port 6334]
+    end
+
+    subgraph "Storage Management"
+        ToC[Table of Contents<br/>Collection Registry]
+        Consensus[Raft Consensus<br/>Leader Election<br/>Log Replication]
+        RBAC[RBAC<br/>Access Control]
+    end
+
+    subgraph "Collection Layer"
+        Collection[Collection Manager<br/>Hash Ring Distribution]
+        Shard1[Shard 1<br/>Local/Remote]
+        Shard2[Shard 2<br/>Local/Remote]
+        Shard3[Shard N<br/>Replicas]
+    end
+
+    subgraph "Segment Layer (Core Engine)"
+        Segment[Segment<br/>Immutable Storage Unit]
+
+        subgraph "Storage"
+            VectorStore[Vector Storage<br/>Dense/Sparse/Quantized]
+            PayloadStore[Payload Storage<br/>JSON Metadata]
+            IDTracker[ID Tracker<br/>External→Internal IDs]
+        end
+
+        subgraph "Indexes"
+            HNSW[HNSW Index<br/>Graph-based ANN]
+            FieldIndex[Field Indexes<br/>Keyword, Numeric, Geo, Text]
+        end
+    end
+
+    subgraph "Persistence Layer"
+        WAL[(Write-Ahead Log<br/>Durability)]
+        RocksDB[(RocksDB<br/>Key-Value Store<br/>Segments, Metadata)]
+    end
+
+    %% Connections
+    Client -->|HTTP/gRPC| REST
+    Client -->|gRPC| GRPC
+
+    REST --> ToC
+    GRPC --> ToC
+
+    ToC --> Consensus
+    ToC --> RBAC
+    ToC --> Collection
+
+    Collection --> Shard1
+    Collection --> Shard2
+    Collection --> Shard3
+
+    Shard1 --> WAL
+    Shard1 --> Segment
+
+    Segment --> VectorStore
+    Segment --> PayloadStore
+    Segment --> IDTracker
+    Segment --> HNSW
+    Segment --> FieldIndex
+
+    VectorStore --> RocksDB
+    PayloadStore --> RocksDB
+    HNSW --> RocksDB
+
+    %% Styling
+    classDef apiLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef segment fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef persist fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+
+    class REST,GRPC apiLayer
+    class ToC,Consensus,RBAC storage
+    class Segment,VectorStore,PayloadStore,HNSW,FieldIndex segment
+    class WAL,RocksDB persist

@@ -1,0 +1,89 @@
+%% HNSW Multi-Layer Graph Structure
+%% Analysis Baseline: adcda004057df08389106da56f440db185f0c382
+
+graph TB
+    subgraph "Layer 2 (Top, Sparse)"
+        L2_1((Point 1))
+        L2_50((Point 50))
+        L2_1 -.->|long-range| L2_50
+    end
+
+    subgraph "Layer 1 (Medium Density)"
+        L1_1((Point 1))
+        L1_10((Point 10))
+        L1_25((Point 25))
+        L1_50((Point 50))
+        L1_75((Point 75))
+
+        L1_1 -->|M links| L1_10
+        L1_10 --> L1_25
+        L1_25 --> L1_50
+        L1_50 --> L1_75
+        L1_10 -.-> L1_50
+    end
+
+    subgraph "Layer 0 (Bottom, Dense)"
+        L0_1((1))
+        L0_5((5))
+        L0_10((10))
+        L0_15((15))
+        L0_25((25))
+        L0_30((30))
+        L0_40((40))
+        L0_50((50))
+        L0_60((60))
+        L0_75((75))
+        L0_80((80))
+        L0_90((90))
+
+        L0_1 --> L0_5
+        L0_5 --> L0_10
+        L0_10 --> L0_15
+        L0_15 --> L0_25
+        L0_25 --> L0_30
+        L0_30 --> L0_40
+        L0_40 --> L0_50
+        L0_50 --> L0_60
+        L0_60 --> L0_75
+        L0_75 --> L0_80
+        L0_80 --> L0_90
+
+        L0_1 -.-> L0_10
+        L0_5 -.-> L0_15
+        L0_10 -.-> L0_25
+        L0_25 -.-> L0_50
+        L0_50 -.-> L0_75
+    end
+
+    %% Vertical connections between layers
+    L2_1 ---|drop<br/>down| L1_1
+    L1_1 ---|drop<br/>down| L0_1
+
+    L2_50 ---|drop<br/>down| L1_50
+    L1_50 ---|drop<br/>down| L0_50
+
+    %% Search path
+    L2_1 ==>|1. Start| L2_50
+    L2_50 ==>|2. Drop| L1_50
+    L1_50 ==>|3. Greedy| L1_75
+    L1_75 ==>|4. Drop| L0_75
+    L0_75 ==>|5. Greedy| L0_80
+
+    %% Annotations
+    Note1[Entry Point: Top layer]
+    Note2[Coarse Navigation:<br/>Jump to approximate region]
+    Note3[Fine-grained Search:<br/>Find exact neighbors]
+
+    Note1 -.-> L2_1
+    Note2 -.-> L1_50
+    Note3 -.-> L0_80
+
+    classDef searchPath fill:#ff9800,stroke:#e65100,stroke-width:3px
+    classDef layer0 fill:#e3f2fd,stroke:#1976d2
+    classDef layer1 fill:#fff3e0,stroke:#f57c00
+    classDef layer2 fill:#f3e5f5,stroke:#7b1fa2
+
+    class L2_1,L2_50,L1_50,L1_75,L0_75,L0_80 searchPath
+    class L0_1,L0_5,L0_10,L0_15,L0_25,L0_30,L0_40,L0_50,L0_60,L0_75,L0_80,L0_90 layer0
+    class L1_1,L1_10,L1_25,L1_50,L1_75 layer1
+    class L2_1,L2_50 layer2
