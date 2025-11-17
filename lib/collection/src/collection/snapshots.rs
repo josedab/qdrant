@@ -144,8 +144,9 @@ impl Collection {
         })?;
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
+        let chunk_size = Some(self.shared_storage_config.snapshots_config.chunk_size);
         snapshot_manager
-            .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
+            .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path(), chunk_size)
             .await
             .map_err(|err| {
                 CollectionError::service_error(format!(
@@ -291,7 +292,8 @@ impl Collection {
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
-        ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir).await
+        let buffer_size = Some(self.shared_storage_config.snapshots_config.stream_buffer_size);
+        ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir, buffer_size).await
     }
 
     /// # Cancel safety

@@ -1071,7 +1071,7 @@ impl ShardHolder {
 
         let snapshot_manager = shard.get_snapshots_storage_manager()?;
         let snapshot_description = snapshot_manager
-            .store_file(temp_file.path(), &snapshot_path)
+            .store_file(temp_file.path(), &snapshot_path, None)
             .await;
         if snapshot_description.is_ok() {
             let _ = temp_file.keep();
@@ -1088,6 +1088,7 @@ impl ShardHolder {
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
+        buffer_size: Option<usize>,
     ) -> CollectionResult<SnapshotStream> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is cancelled
@@ -1107,7 +1108,11 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
 
-        let (read_half, write_half) = tokio::io::duplex(4096);
+        // Use 64MB buffer for streaming to improve throughput and reduce memory pressure
+        // See RFC-0007: Streaming Backup and Restore
+        const DEFAULT_STREAM_BUFFER_SIZE: usize = 64 * 1024 * 1024; // 64MB
+        let stream_buffer_size = buffer_size.unwrap_or(DEFAULT_STREAM_BUFFER_SIZE);
+        let (read_half, write_half) = tokio::io::duplex(stream_buffer_size);
 
         let future = async move {
             let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));

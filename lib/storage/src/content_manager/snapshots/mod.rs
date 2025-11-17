@@ -211,7 +211,7 @@ async fn _do_create_full_snapshot(
     AbortOnDropHandle::new(archiving).await??;
 
     let snapshot_description = snapshot_manager
-        .store_file(&temp_full_snapshot_path, &full_snapshot_path)
+        .store_file(&temp_full_snapshot_path, &full_snapshot_path, None)
         .await?;
     tokio_fs::remove_file(&config_path).await?;
     Ok(snapshot_description)

@@ -21,6 +21,22 @@ use crate::operations::types::{CollectionError, CollectionResult};
 pub struct SnapshotsConfig {
     pub snapshots_storage: SnapshotsStorageConfig,
     pub s3_config: Option<S3Config>,
+    /// Buffer size for streaming snapshots (default: 64MB)
+    /// See RFC-0007: Streaming Backup and Restore
+    #[serde(default = "default_stream_buffer_size")]
+    pub stream_buffer_size: usize,
+    /// Chunk size for cloud storage uploads (default: 64MB)
+    /// See RFC-0007: Streaming Backup and Restore
+    #[serde(default = "default_chunk_size")]
+    pub chunk_size: usize,
+}
+
+fn default_stream_buffer_size() -> usize {
+    64 * 1024 * 1024 // 64MB
+}
+
+fn default_chunk_size() -> usize {
+    64 * 1024 * 1024 // 64MB
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -123,6 +139,7 @@ impl SnapshotStorageManager {
         &self,
         source_path: &Path,
         target_path: &Path,
+        chunk_size: Option<usize>,
     ) -> CollectionResult<SnapshotDescription> {
         debug_assert_ne!(
             source_path, target_path,
@@ -133,7 +150,7 @@ impl SnapshotStorageManager {
                 storage_impl.store_file(source_path, target_path).await
             }
             SnapshotStorageManager::S3(storage_impl) => {
-                storage_impl.store_file(source_path, target_path).await
+                storage_impl.store_file(source_path, target_path, chunk_size).await
             }
         }
     }
@@ -399,8 +416,9 @@ impl SnapshotStorageCloud {
         &self,
         source_path: &Path,
         target_path: &Path,
+        chunk_size: Option<usize>,
     ) -> CollectionResult<SnapshotDescription> {
-        snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path).await?;
+        snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path, chunk_size).await?;
         tokio_fs::remove_file(source_path).await?;
         snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await
     }
@@ -464,5 +482,42 @@ impl SnapshotStorageCloud {
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
         Ok(SnapshotStream::new_stream(download.into_stream(), None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshots_config_defaults() {
+        // Test that default configuration uses 64MB for both buffer and chunk size
+        let config = SnapshotsConfig::default();
+        assert_eq!(config.stream_buffer_size, 64 * 1024 * 1024);
+        assert_eq!(config.chunk_size, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_snapshots_config_deserialization() {
+        // Test that config can be deserialized with default values
+        let json = r#"{
+            "snapshots_storage": "local"
+        }"#;
+        let config: SnapshotsConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.stream_buffer_size, 64 * 1024 * 1024);
+        assert_eq!(config.chunk_size, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_snapshots_config_custom_values() {
+        // Test that config can be deserialized with custom values
+        let json = r#"{
+            "snapshots_storage": "local",
+            "stream_buffer_size": 33554432,
+            "chunk_size": 33554432
+        }"#;
+        let config: SnapshotsConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.stream_buffer_size, 32 * 1024 * 1024); // 32MB
+        assert_eq!(config.chunk_size, 32 * 1024 * 1024); // 32MB
     }
 }
