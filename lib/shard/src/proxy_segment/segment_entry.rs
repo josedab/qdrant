@@ -23,18 +23,22 @@ use segment::types::*;
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 impl SegmentEntry for ProxySegment {
+    #[inline]
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
     }
 
+    #[inline]
     fn persistent_version(&self) -> SeqNumberType {
         self.wrapped_segment.get().read().persistent_version()
     }
 
+    #[inline]
     fn is_proxy(&self) -> bool {
         true
     }
 
+    #[inline]
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
         // Use wrapped segment version, if absent we have no version at all
         let wrapped_version = self.wrapped_segment.get().read().point_version(point_id)?;
@@ -288,12 +292,14 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
+    #[inline]
     fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
+        // Fast path: check deleted points before acquiring lock
         if self.deleted_points.contains_key(&point_id) {
             Ok(None)
         } else {
@@ -331,11 +337,13 @@ impl SegmentEntry for ProxySegment {
         Ok(result)
     }
 
+    #[inline]
     fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
+        // Fast path: check deleted points before acquiring lock
         if self.deleted_points.contains_key(&point_id) {
             Ok(Payload::default())
         } else {
@@ -493,21 +501,26 @@ impl SegmentEntry for ProxySegment {
         Ok(hits)
     }
 
+    #[inline]
     fn has_point(&self, point_id: PointIdType) -> bool {
+        // Fast path: check local deleted points first before acquiring lock
         !self.deleted_points.contains_key(&point_id)
             && self.wrapped_segment.get().read().has_point(point_id)
     }
 
+    #[inline]
     fn is_empty(&self) -> bool {
         self.wrapped_segment.get().read().is_empty()
     }
 
+    #[inline]
     fn available_point_count(&self) -> usize {
         let deleted_points_count = self.deleted_points.len();
         let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
         wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 
+    #[inline]
     fn deleted_point_count(&self) -> usize {
         self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.len()
     }

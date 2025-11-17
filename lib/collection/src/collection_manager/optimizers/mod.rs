@@ -12,6 +12,7 @@ use super::holders::segment_holder::SegmentId;
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
+pub mod optimization_latency_tracker;
 pub mod segment_optimizer;
 pub mod vacuum_optimizer;
 
