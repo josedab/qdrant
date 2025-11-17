@@ -1,0 +1,23 @@
+[run]
+command = "test"
+timeout = "600s"
+out = ["Xml", "Html"]
+output-dir = "coverage"
+
+[report]
+coveralls = false
+codecov = true
+
+[coverage]
+line = true
+branch = true
+exclude-files = [
+    "tests/*",
+    "benches/*",
+    "examples/*",
+    "*/mod.rs",
+]
+
+[output]
+color = "always"
+verbose = true
