@@ -1,6 +1,6 @@
 //! Extensions for the `tar` crate.
 
-use std::io::{self, Seek, Write};
+use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tap::Tap;
 use tokio::sync::Mutex;
 use tokio::task::JoinError;
+
+use crate::streaming::ChunkedFileReader;
 
 /// A wrapper around [`tar::Builder`] that:
 /// 1. Usable both in sync and async contexts.
@@ -224,6 +226,53 @@ impl<W: Write + Seek> BuilderExt<W> {
 
         Ok(())
     }
+
+    /// Append a file to the tar archive using streaming with constant memory usage.
+    /// This reads the file in chunks (default 64MB) to prevent loading large files
+    /// entirely into memory.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    /// Use [`BuilderExt::append_file_streaming`] instead.
+    pub fn blocking_append_file_streaming(&self, src: &Path, dst: &Path) -> io::Result<()> {
+        let dst = join_relative(&self.path, dst)?;
+
+        // Get file metadata
+        let metadata = std::fs::metadata(src)?;
+        let file_size = metadata.len();
+
+        // Open file for reading
+        let mut file = std::fs::File::open(src)?;
+
+        // Create header
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o644);
+        header.set_size(file_size);
+        header.set_mtime(
+            metadata
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        );
+
+        // Get tar builder and create entry writer
+        let mut tar = self.tar.blocking_lock();
+        let mut entry_writer = tar.tar().append_writer(&mut header, dst)?;
+
+        // Stream file in chunks
+        let chunked_reader = ChunkedFileReader::new();
+        chunked_reader.stream_reader(&mut file, |chunk| {
+            entry_writer.write_all(chunk)
+        })?;
+
+        // Finish writing the entry
+        entry_writer.finish()?;
+
+        Ok(())
+    }
 }
 
 impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
@@ -254,6 +303,52 @@ impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
         tokio::task::spawn_blocking(move || self.blocking_finish()).await?
     }
 
+    /// Append a file to the tar archive using streaming with constant memory usage.
+    /// This is the async counterpart of [`BuilderExt::blocking_append_file_streaming`].
+    pub async fn append_file_streaming(&self, src: &Path, dst: &Path) -> io::Result<()> {
+        let src = src.to_path_buf();
+        let dst = join_relative(&self.path, dst)?;
+        let tar = Arc::clone(&self.tar);
+
+        tokio::task::spawn_blocking(move || {
+            // Get file metadata
+            let metadata = std::fs::metadata(&src)?;
+            let file_size = metadata.len();
+
+            // Open file for reading
+            let mut file = std::fs::File::open(&src)?;
+
+            // Create header
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o644);
+            header.set_size(file_size);
+            header.set_mtime(
+                metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+            );
+
+            // Get tar builder and create entry writer
+            let mut tar_guard = tar.blocking_lock();
+            let mut entry_writer = tar_guard.tar().append_writer(&mut header, dst)?;
+
+            // Stream file in chunks
+            let chunked_reader = ChunkedFileReader::new();
+            chunked_reader.stream_reader(&mut file, |chunk| {
+                entry_writer.write_all(chunk)
+            })?;
+
+            // Finish writing the entry
+            entry_writer.finish()?;
+
+            Ok(())
+        })
+        .await?
+    }
+
     async fn run_async<T, E>(
         &self,
         f: impl FnOnce(&mut tar::Builder<FusedWriteSeek<W>>) -> Result<T, E> + Send + 'static,
@@ -276,6 +371,55 @@ fn join_relative(base: &Path, rel_path: &Path) -> io::Result<PathBuf> {
     }
 
     Ok(base.join(rel_path))
+}
+
+/// Extract a TAR archive using streaming with constant memory usage.
+/// This unpacks entries in chunks to prevent loading large files into memory.
+pub fn extract_tar_streaming<R: Read>(archive: &mut tar::Archive<R>, dst: &Path) -> io::Result<()> {
+    let chunked_reader = ChunkedFileReader::new();
+
+    for entry_result in archive.entries()? {
+        let mut entry = entry_result?;
+
+        // Get entry path
+        let entry_path = entry.path()?;
+        let full_path = dst.join(&*entry_path);
+
+        // Create parent directories if needed
+        if let Some(parent) = full_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Handle different entry types
+        let entry_type = entry.header().entry_type();
+
+        if entry_type.is_dir() {
+            std::fs::create_dir_all(&full_path)?;
+        } else if entry_type.is_file() {
+            // Extract file in chunks
+            let mut output_file = std::fs::File::create(&full_path)?;
+
+            // Stream the entry contents in chunks
+            chunked_reader.stream_reader(&mut entry, |chunk| {
+                output_file.write_all(chunk)
+            })?;
+
+            // Set file permissions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(mode) = entry.header().mode() {
+                    let permissions = std::fs::Permissions::from_mode(mode);
+                    std::fs::set_permissions(&full_path, permissions)?;
+                }
+            }
+        } else if entry_type.is_symlink() || entry_type.is_hard_link() {
+            // Handle links - unpack normally as they're small
+            entry.unpack(&full_path)?;
+        }
+    }
+
+    Ok(())
 }
 
 /// A wrapper that provides "dummy" [`io::Seek`] implementation to [`io::Write`] stream.

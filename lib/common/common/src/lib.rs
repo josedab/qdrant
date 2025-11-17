@@ -24,6 +24,7 @@ pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;
 pub mod stable_hash;
+pub mod streaming;
 pub mod tar_ext;
 pub mod tempfile_ext;
 pub mod top_k;

@@ -164,9 +164,14 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
     ) -> CollectionResult<()> {
-        // decompress archive
+        // decompress archive using streaming to maintain constant memory usage
         let mut ar = open_snapshot_archive_with_validation(snapshot_path)?;
-        ar.unpack(target_dir)?;
+        common::tar_ext::extract_tar_streaming(&mut ar, target_dir)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to extract snapshot archive: {err}"
+                ))
+            })?;
 
         let config = CollectionConfigInternal::load(target_dir)?;
         config.validate_and_warn();

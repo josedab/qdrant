@@ -82,12 +82,12 @@ impl SnapshotEntry for Segment {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
                     let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, include_if)
+                    snapshot_files_streaming(self, temp_path, &tar, include_if)
                 })??;
             }
             SnapshotFormat::Streamable => {
                 let tar = tar.descend(Path::new(&segment_id))?;
-                snapshot_files(self, temp_path, &tar, include_if)?;
+                snapshot_files_streaming(self, temp_path, &tar, include_if)?;
             }
         }
 
@@ -246,6 +246,143 @@ impl Segment {
 
         files
     }
+}
+
+/// Snapshot files using streaming to maintain constant memory usage.
+/// This version uses chunked file reading (64MB chunks) to prevent OOM with large files.
+pub fn snapshot_files_streaming(
+    segment: &Segment,
+    temp_path: &Path,
+    tar: &tar_ext::BuilderExt<impl Write + Seek>,
+    include_if: impl Fn(&Path) -> bool,
+) -> OperationResult<()> {
+    // use temp_path for intermediary files
+    let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
+
+    // TODO: Version RocksDB!? 🤯
+
+    #[cfg(feature = "rocksdb")]
+    if include_if(ROCKS_DB_VIRT_FILE.as_ref())
+        && let Some(db) = &segment.database
+    {
+        let db_backup_path = temp_path.join(super::DB_BACKUP_PATH);
+
+        let db = db.read();
+        crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to create RocksDB backup at {}: {err}",
+                db_backup_path.display()
+            ))
+        })?;
+    }
+
+    #[cfg(feature = "rocksdb")]
+    if include_if(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE.as_ref()) {
+        let payload_index_db_backup_path = temp_path.join(crate::segment::PAYLOAD_DB_BACKUP_PATH);
+
+        segment
+            .payload_index
+            .borrow()
+            .take_database_snapshot(&payload_index_db_backup_path)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to create payload index RocksDB backup at {}: {err}",
+                    payload_index_db_backup_path.display()
+                ))
+            })?;
+    }
+
+    if temp_path.exists() {
+        tar.blocking_append_dir_all(&temp_path, Path::new(""))
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to add RockDB backup {} into snapshot: {err}",
+                    temp_path.display()
+                ))
+            })?;
+
+        // remove tmp directory in background
+        let _ = thread::spawn(move || {
+            let res = fs::remove_dir_all(&temp_path);
+            if let Err(err) = res {
+                log::error!(
+                    "failed to remove temporary directory {}: {err}",
+                    temp_path.display(),
+                );
+            }
+        });
+    }
+
+    let tar = tar.descend(Path::new(SNAPSHOT_FILES_PATH))?;
+
+    // Use streaming append for all files to maintain constant memory usage
+    for vector_data in segment.vector_data.values() {
+        for file in vector_data.vector_index.borrow().files() {
+            let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+            if include_if(stripped_path) {
+                tar.blocking_append_file_streaming(&file, stripped_path)
+                    .map_err(|err| failed_to_add("vector index file", &file, err))?;
+            }
+        }
+
+        for file in vector_data.vector_storage.borrow().files() {
+            let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+            if include_if(stripped_path) {
+                tar.blocking_append_file_streaming(&file, stripped_path)
+                    .map_err(|err| failed_to_add("vector storage file", &file, err))?;
+            }
+        }
+
+        if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
+            for file in quantized_vectors.files() {
+                let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+                if include_if(stripped_path) {
+                    tar.blocking_append_file_streaming(&file, stripped_path)
+                        .map_err(|err| failed_to_add("quantized vectors file", &file, err))?;
+                }
+            }
+        }
+    }
+
+    for file in segment.payload_index.borrow().files() {
+        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+        if include_if(stripped_path) {
+            tar.blocking_append_file_streaming(&file, stripped_path)
+                .map_err(|err| failed_to_add("payload index file", &file, err))?;
+        }
+    }
+
+    for file in segment.payload_storage.borrow().files() {
+        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+        if include_if(stripped_path) {
+            tar.blocking_append_file_streaming(&file, stripped_path)
+                .map_err(|err| failed_to_add("payload storage file", &file, err))?;
+        }
+    }
+
+    for file in segment.id_tracker.borrow().files() {
+        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+
+        if include_if(stripped_path) {
+            tar.blocking_append_file_streaming(&file, stripped_path)
+                .map_err(|err| failed_to_add("id tracker file", &file, err))?;
+        }
+    }
+
+    let segment_state_path = segment.current_path.join(SEGMENT_STATE_FILE);
+    tar.blocking_append_file_streaming(&segment_state_path, Path::new(SEGMENT_STATE_FILE))
+        .map_err(|err| failed_to_add("segment state file", &segment_state_path, err))?;
+
+    let version_file_path = segment.current_path.join(VERSION_FILE);
+    tar.blocking_append_file_streaming(&version_file_path, Path::new(VERSION_FILE))
+        .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
+
+    Ok(())
 }
 
 pub fn snapshot_files(
