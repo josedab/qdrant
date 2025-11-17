@@ -1,0 +1,39 @@
+# Tarpaulin Configuration for Code Coverage
+# Reference: https://github.com/xd009642/tarpaulin
+#
+# NOTE: This project currently uses cargo-llvm-cov for coverage.
+# This configuration file is provided for reference and future migration if needed.
+
+[config]
+# Exclude generated and utility files from coverage
+exclude-files = [
+    "src/schema_generator.rs",
+    "src/wal_inspector.rs",
+    "src/wal_pop.rs",
+    "lib/api/src/grpc/qdrant.rs",  # Generated protobuf code
+]
+
+# Include coverage for unsafe code blocks
+exclude-unsafe = false
+
+# Timeout for tests (in seconds)
+timeout = 600
+
+# Run for all workspace members
+workspace = true
+
+# Output formats
+# Options: Html, Lcov, Xml, Json
+out = ["Lcov", "Html"]
+
+# Output directory
+output-dir = "target/coverage"
+
+# Coverage target directory
+target-dir = "target/tarpaulin"
+
+# Don't fail fast - run all tests
+no-fail-fast = true
+
+# Verbose output
+verbose = true

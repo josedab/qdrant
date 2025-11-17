@@ -1,6 +1,10 @@
-name: Coverage Report - dev
+name: Code Coverage
 
 on:
+  pull_request:
+    branches: [ master, dev ]
+  push:
+    branches: [ master ]
   workflow_dispatch: # Trigger from UI for selected branch
   schedule:
     - cron: "0 0 * * *" # Every day at midnight UTC
@@ -109,3 +113,29 @@ jobs:
           override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
+          fail_ci_if_error: false
+      - name: Check coverage threshold
+        run: |
+          # Extract line coverage rate from lcov file
+          TOTAL_LINES=$(grep -E '^LF:' merged.lcov | awk -F: '{sum+=$2} END {print sum}')
+          COVERED_LINES=$(grep -E '^LH:' merged.lcov | awk -F: '{sum+=$2} END {print sum}')
+
+          if [ "$TOTAL_LINES" -gt 0 ]; then
+            COVERAGE=$(echo "scale=4; $COVERED_LINES / $TOTAL_LINES" | bc)
+            COVERAGE_PERCENT=$(echo "scale=2; $COVERAGE * 100" | bc)
+            THRESHOLD=70.0
+
+            echo "Coverage: ${COVERAGE_PERCENT}%"
+            echo "Threshold: ${THRESHOLD}%"
+
+            # Compare coverage to threshold (using bc for float comparison)
+            if (( $(echo "$COVERAGE_PERCENT < $THRESHOLD" | bc -l) )); then
+              echo "❌ Coverage ${COVERAGE_PERCENT}% is below threshold ${THRESHOLD}%"
+              exit 1
+            else
+              echo "✅ Coverage ${COVERAGE_PERCENT}% meets threshold ${THRESHOLD}%"
+            fi
+          else
+            echo "⚠️ No coverage data found"
+            exit 1
+          fi
