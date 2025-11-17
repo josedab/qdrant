@@ -25,6 +25,7 @@ use crate::common::query::{
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/search")]
+#[tracing::instrument(skip(dispatcher, request, params, service_config, access), fields(collection = %collection.name))]
 async fn search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -87,6 +88,7 @@ async fn search_points(
 }
 
 #[post("/collections/{name}/points/search/batch")]
+#[tracing::instrument(skip(dispatcher, request, params, service_config, access), fields(collection = %collection.name))]
 async fn batch_search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -162,6 +164,7 @@ async fn batch_search_points(
 }
 
 #[post("/collections/{name}/points/search/groups")]
+#[tracing::instrument(skip(dispatcher, request, params, service_config, access), fields(collection = %collection.name))]
 async fn search_point_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -217,6 +220,7 @@ async fn search_point_groups(
 }
 
 #[post("/collections/{name}/points/search/matrix/pairs")]
+#[tracing::instrument(skip(dispatcher, request, params, service_config, access), fields(collection = %collection.name))]
 async fn search_points_matrix_pairs(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -273,6 +277,7 @@ async fn search_points_matrix_pairs(
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
+#[tracing::instrument(skip(dispatcher, request, params, service_config, access), fields(collection = %collection.name))]
 async fn search_points_matrix_offsets(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

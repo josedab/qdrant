@@ -12,6 +12,9 @@ pub struct LoggerConfig {
     pub default: default::Config,
     #[serde(default)]
     pub on_disk: on_disk::Config,
+    #[cfg(feature = "tracing")]
+    #[serde(default)]
+    pub opentelemetry: super::opentelemetry::OpenTelemetryConfig,
 }
 
 impl LoggerConfig {

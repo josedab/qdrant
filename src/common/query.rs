@@ -17,6 +17,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(toc, request, access, hw_measurement_acc), fields(collection_name))]
 pub async fn do_core_search_points(
     toc: &TableOfContent,
     collection_name: &str,

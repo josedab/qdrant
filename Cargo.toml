@@ -30,6 +30,8 @@ console = ["console-subscriber"]
 console-subscriber = ["tracing", "dep:console-subscriber"]
 tracy = ["tracing-tracy"]
 tracing-tracy = ["tracing", "dep:tracing-tracy"]
+opentelemetry-jaeger = ["tracing", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-jaeger", "dep:tracing-opentelemetry"]
+opentelemetry-otlp = ["tracing", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
@@ -145,6 +147,11 @@ console-subscriber = { version = "0.4.1", default-features = false, features = [
     "parking_lot",
 ], optional = true }
 tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
+opentelemetry = { version = "0.22", optional = true }
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"], optional = true }
+opentelemetry-jaeger = { version = "0.21", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.15", features = ["grpc-tonic", "trace"], optional = true }
+tracing-opentelemetry = { version = "0.23", optional = true }
 actix-web-extras = "0.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]

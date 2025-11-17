@@ -106,6 +106,7 @@ async fn get_collection_aliases(
 }
 
 #[put("/collections/{name}")]
+#[tracing::instrument(skip(dispatcher, operation, query, access), fields(collection = %collection.name))]
 async fn create_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<StrictCollectionPath>,
@@ -132,6 +133,7 @@ async fn create_collection(
 }
 
 #[patch("/collections/{name}")]
+#[tracing::instrument(skip(dispatcher, operation, query, access), fields(collection = %collection.name))]
 async fn update_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -155,6 +157,7 @@ async fn update_collection(
 }
 
 #[delete("/collections/{name}")]
+#[tracing::instrument(skip(dispatcher, query, access), fields(collection = %collection.name))]
 async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

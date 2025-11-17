@@ -1,0 +1,62 @@
+# Example configuration for OpenTelemetry distributed tracing
+# This file demonstrates how to configure OpenTelemetry exporters for Qdrant
+
+log_level: INFO
+
+# Logging configuration with OpenTelemetry tracing
+logger:
+  # Regular logging configuration
+  format: text
+  log_level: INFO
+
+  # OpenTelemetry distributed tracing configuration
+  opentelemetry:
+    # Enable OpenTelemetry tracing
+    enabled: true
+
+    # Service name to use in traces (optional, defaults to "qdrant")
+    service_name: "qdrant"
+
+    # Exporter configuration
+    exporter:
+      # Exporter type: jaeger, otlp, or console
+      # - jaeger: Export to Jaeger (for development)
+      # - otlp: Export via OTLP protocol (for Grafana Tempo, etc.)
+      # - console: Export to console for debugging
+      type: jaeger
+
+      # Endpoint for the exporter (optional)
+      # For Jaeger agent: "localhost:6831" (UDP) or "http://localhost:14268/api/traces" (HTTP)
+      # For OTLP: "http://localhost:4317" (gRPC)
+      endpoint: "localhost:6831"
+
+# Example configurations for different scenarios:
+
+# 1. Development with Jaeger (default):
+# logger:
+#   opentelemetry:
+#     enabled: true
+#     exporter:
+#       type: jaeger
+#       endpoint: "localhost:6831"
+
+# 2. Production with Grafana Tempo via OTLP:
+# logger:
+#   opentelemetry:
+#     enabled: true
+#     service_name: "qdrant-production"
+#     exporter:
+#       type: otlp
+#       endpoint: "http://tempo:4317"
+
+# 3. Local debugging with console output:
+# logger:
+#   opentelemetry:
+#     enabled: true
+#     exporter:
+#       type: console
+
+# Note: To use OpenTelemetry, you need to compile Qdrant with the appropriate feature flags:
+# - For Jaeger: cargo build --features opentelemetry-jaeger
+# - For OTLP: cargo build --features opentelemetry-otlp
+# - For both: cargo build --features opentelemetry-jaeger,opentelemetry-otlp

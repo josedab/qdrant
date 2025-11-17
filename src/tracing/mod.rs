@@ -3,6 +3,9 @@ pub mod default;
 pub mod handle;
 pub mod on_disk;
 
+#[cfg(feature = "tracing")]
+pub mod opentelemetry;
+
 #[cfg(test)]
 mod test;
 
@@ -27,6 +30,14 @@ const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
 ];
 
 pub fn setup(mut config: config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
+    // Initialize OpenTelemetry tracer provider before setting up tracing subscriber
+    #[cfg(feature = "tracing")]
+    {
+        if let Err(e) = opentelemetry::init_tracer(&config.opentelemetry) {
+            log::warn!("Failed to initialize OpenTelemetry tracer: {}", e);
+        }
+    }
+
     // Note that on-disk logger *have* to be initialized *before* default logger!
     //
     // If default logger is initialized before on-disk logger, then ANSI escape-sequences (that are
@@ -74,6 +85,15 @@ pub fn setup(mut config: config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
             tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
         ),
     );
+
+    // Add OpenTelemetry layer if enabled
+    #[cfg(any(feature = "opentelemetry-jaeger", feature = "opentelemetry-otlp"))]
+    let reg = {
+        // The OpenTelemetry layer will be configured to use the global tracer provider
+        // which is set up by opentelemetry::init_tracer() called earlier
+        let telemetry = tracing_opentelemetry::layer();
+        reg.with(telemetry)
+    };
 
     tracing::subscriber::set_global_default(reg)?;
     tracing_log::LogTracer::init()?;
